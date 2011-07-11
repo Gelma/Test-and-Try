@@ -270,7 +270,7 @@ if __name__ == "__main__":
 		id.terminate()
 
 	logga('inizio invio notifiche')
-	for id in zodb.keys():
+	for id in sorted(zodb.keys()):
 		if zodb[id].notifiche:
 			logga('Lug <'+id+'> invio notifiche')
 			report.append(30*'-')
