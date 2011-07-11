@@ -248,7 +248,7 @@ if __name__ == "__main__":
 			report.append('Warn: '+voce+' eliminato da ZODB')
 			logga('rimosso <'+voce+'> da ZODB')
 
-	for id in zodb.keys(): # lancio ogni thread a distanza di n secondi
+	for id in sorted(zodb.keys()):
 		fred = multiprocessing.Process(target=zodb[id].controlli, name=id, args=(coda_risultati,))
 		fred.start()
 		fred.join(tempo_minimo_per_i_controlli)
