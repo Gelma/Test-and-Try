@@ -78,7 +78,7 @@ def invia_report(body):
 	"""I receive a body, and I send email"""
 	return
 	header_from   = "Spazzino <spazzino@gelma.net>"
-	header_to     = "gelma@gelma.net"
+	header_to     = "necro"
 	subject       = 'LugMap: report data (UTC) '+str(datetime.datetime.utcnow())
 
 	msg = ("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n" % (header_from, header_to, subject))
@@ -248,10 +248,16 @@ if __name__ == "__main__":
 			report.append('Warn: '+voce+' eliminato da ZODB')
 			logga('rimosso <'+voce+'> da ZODB')
 
+	all_p = []
 	for id in sorted(zodb.keys()):
+		'''
 		fred = multiprocessing.Process(target=zodb[id].controlli, name=id, args=(coda_risultati,))
 		fred.start()
 		fred.join(tempo_minimo_per_i_controlli)
+		'''
+		all_p.append(multiprocessing.Process(target=zodb[id].controlli, name=id, args=(coda_risultati,)))
+		all_p[-1].start()
+		all_p[-1].join(tempo_minimo_per_i_controlli)
 
 	logga('inizio commit dei risultati in zodb')
 	while True:
