@@ -68,7 +68,7 @@ except:
 if True: # variabili globali
 	elenco_lug						= set() # usato per cancellare Lug rimossi da zodb e per controllare omonimie
 	coda_risultati					= multiprocessing.Queue() # risposte dei thread con i dati aggiornati
-	tempo_minimo_per_i_controlli	= 30 # secondi
+	tempo_minimo_per_i_controlli	= 20 # secondi
 	report 							= [] # linee del report finale
 	report.append('Spazzino: report data (UTC) ' + str(datetime.datetime.utcnow()))
 	report.append('')
