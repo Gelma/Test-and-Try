@@ -25,7 +25,7 @@ if True: # import dei moduli
 		sys.exit("Necessito di un interprete Python dalla versione 2.6 in poi")
 
 	try:
-		import csv, datetime, glob, multiprocessing, os, socket, sys, smtplib, syslog, time
+		import atexit, csv, datetime, glob, multiprocessing, os, socket, sys, smtplib, syslog, time
 	except:
 		sys.exit("Non sono disponibili tutti i moduli standard necessari")
 
@@ -39,6 +39,10 @@ if True: # import dei moduli
 	except:
 		sys.exit("Installa mechanize: 'easy_install mechanize' oppure 'apt-get install python-mechanize'")
 
+	try:
+		import cPickle as pickle
+	except:
+		import pickle
 
 def logga(*args):
 	"""Ricevo un testo o un array e lo butto nei log di sistema"""
@@ -67,10 +71,11 @@ except:
 
 if True: # variabili globali
 	elenco_lug						= set() # usato per cancellare Lug rimossi da zodb e per controllare omonimie
-	coda_risultati					= multiprocessing.Queue() # risposte dei thread con i dati aggiornati
 	tempo_minimo_per_i_controlli	= 20 # secondi
+	elenco_thread					= []
+	path_coda						= '/tmp/' # posizione dei file temporanei di coda
 	report 							= [] # linee del report finale
-	report.append('Spazzino: report data (UTC) ' + str(datetime.datetime.utcnow()))
+	report.append('Spazzino: report del ' + str(datetime.datetime.utcnow()) + '(UTC)')
 	report.append('')
 	socket.setdefaulttimeout(tempo_minimo_per_i_controlli / 4) # Timeout in secondi del fetching delle pagine (onorato da urllib2, a sua volta usato da Mechanize)
 
@@ -78,7 +83,7 @@ def invia_report(body):
 	"""I receive a body, and I send email"""
 	return
 	header_from   = "Spazzino <spazzino@gelma.net>"
-	header_to     = "necro"
+	header_to     = "Gelma <gelma@gelma.net>"
 	subject       = 'LugMap: report data (UTC) '+str(datetime.datetime.utcnow())
 
 	msg = ("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n" % (header_from, header_to, subject))
@@ -93,6 +98,13 @@ def invia_report(body):
 	except:
 		logga('Errore: impossibile inviare email')
 		print 'Errore: impossibile inviare email'
+
+def termina_thread_appesi():
+	"""Uccido tutti i thread ancora attivi"""
+
+	for id in multiprocessing.active_children():
+		logga('Lug: <'+id.name+'> ucciso thread')
+		id.terminate()
 
 class LUG(persistent.Persistent):
 	def __init__(self, id):
@@ -115,28 +127,28 @@ class LUG(persistent.Persistent):
 
 		if self.provincia     != riga_csv[0]:
 			self.provincia     = riga_csv[0]
-			self.notifica('Attenzione provincia aggiornata: '+self.provincia)
+			self.notifica('Atten. provincia aggiornata: '+self.provincia)
 
 		if self.denominazione != riga_csv[1]:
 			self.denominazione = riga_csv[1]
-			self.notifica('Attenzione denominazione aggiornata: '+self.denominazione) # prob. impossibile
+			self.notifica('Atten. denominazione aggiornata: '+self.denominazione) # prob. impossibile
 
 		if self.zona          != riga_csv[2]:
 			self.zona          = riga_csv[2]
-			self.notifica('Attenzione zona aggiornata: '+self.zona)
+			self.notifica('Atten. zona aggiornata: '+self.zona)
 
 		if self.url           != riga_csv[3]:
 			self.url           = riga_csv[3]
 			self.dominio		 = self.url.split('/')[2]
-			self.notifica('Attenzione URL aggiornato: '+self.url)
+			self.notifica('Atten. URL aggiornato: '+self.url)
 
 		if self.contatto      != riga_csv[4]:
 			self.contatto	   = riga_csv[4]
-			self.notifica('Attenzione contatto aggiornato: '+self.contatto)
+			self.notifica('Atten. contatto aggiornato: '+self.contatto)
 
 		if self.regione		  != filedb[5:-4]:
 			self.regione	   = filedb[5:-4]
-			self.notifica('Attenzione regione aggiornata: '+self.regione)
+			self.notifica('Atten. regione aggiornata: '+self.regione)
 
 	def notifica(self, testo):
 		self.numero_errori += 1
@@ -149,18 +161,18 @@ class LUG(persistent.Persistent):
 
 		logga('Lug <'+self.id+'>: controllo DNS per '+self.dominio)
 		try:
-			DNS_attuali = [ IP[4][0] for IP in socket.getaddrinfo(self.dominio, 80, 0, 0, socket.SOL_TCP)]
+			self._v_DNS_attuali = [ IP[4][0] for IP in socket.getaddrinfo(self.dominio, 80, 0, 0, socket.SOL_TCP)]
 		except:
 			self.notifica("Errore DNS per "+self.dominio)
 			return False
 
-		try: # se si solleva l'eccezione, vuole dire che DNS_noti non esiste perché siamo al primo avvio
-			for ip_dns_attuale in DNS_attuali:
+		try: # eccezione nel caso sia il primo lancio e self.DNS_noti non esista
+			for ip_dns_attuale in self._v_DNS_attuali:
 				if ip_dns_attuale not in self.DNS_noti:
-					self.notifica('Attenzione DNS: nuovo %s su %s' % (ip_dns_attuale, ' '.join(self.DNS_noti)))
+					self.notifica('Atten. DNS: nuovo %s su %s' % (ip_dns_attuale, ' '.join(self.DNS_noti)))
 					self.DNS_noti.add(ip_dns_attuale)
 		except:
-			self.DNS_noti = set([IP for IP in DNS_attuali])
+			self.DNS_noti = set([IP for IP in self._v_DNS_attuali])
 
 		return True
 
@@ -189,7 +201,7 @@ class LUG(persistent.Persistent):
 		self.Termini_Precedenti = self._v_Termini_Attuali
 
 		if valore_magico <= 0.6:
-			self.notifica('Attenzione: differenze contenuto homepage ('+str(valore_magico)+')')
+			self.notifica('Atten.: differenze contenuto homepage ('+str(valore_magico)+')')
 		else:
 			logga('Lug <'+self.id+'>: valore_magico a', valore_magico)
 
@@ -207,18 +219,25 @@ class LUG(persistent.Persistent):
 
 		try:
 			if self.title_homepage != self._v_titolo_attuale:
-				self.notifica('Attenzione: title homepage cambiato da <'+self.title_homepage+'>   a   <'+titolo_attuale+'>')
+				self.notifica('Atten.: title homepage cambiato da <'+self.title_homepage+'>   a   <'+titolo_attuale+'>')
 		except: # se fallisce è perché non esiste title_homepage (prima esecuzione)
 			pass
 		self.title_homepage = self._v_titolo_attuale # in ogni caso salvo il nuovo valore
 
 	def aggiorna_dati(self):
-		if hasattr(self, '_v_coda_risultati'):
-			self._v_coda_risultati.put({'id': self.id, 'oggetto': self })
+		try:
+			self._v_incrementale_log += 1
+		except:
+			self._v_incrementale_log = 0
+		nome_file = path_coda + str(time.time()) + '.' + str(os.getpid()) + '.' + str(self._v_incrementale_log) + '.spazzino'
+		try:
+			pickle.dump(self, open(nome_file, 'w'), 0)
+		except:
+			logga('Lug <'+self.id+'>: errore salvataggio pickling '+nome_file)
 
-	def controlli(self, coda_risultati):
-		self._v_coda_risultati = coda_risultati # volatile per evitare save in zodb
+	def controlli(self):
 		logga('Lug <'+self.id+'>: inizio controlli')
+		self.numero_controlli += 1
 		if self.controllo_dns():
 			if self.controllo_homepage():
 				self.controllo_title()
@@ -226,13 +245,14 @@ class LUG(persistent.Persistent):
 		logga('Lug <'+self.id+'>: fine controlli')
 
 if __name__ == "__main__":
+	atexit.register(termina_thread_appesi)
 	for filedb in glob.glob( os.path.join('./db/', '*.txt') ): # piglio ogni file db
 		for riga in csv.reader(open(filedb, "r"), delimiter='|', quoting=csv.QUOTE_NONE): # e per ogni riga/Lug indicato
 			id = riga[1]
 
 			if id in elenco_lug: # controllo univocita' nome lug
-				report.append('Errore: omonimia tra più Lug: '+id) # metti in reportistica generale
-				logga('Dramma, omonimia per i Lug che si chiamano', id)
+				report.append('Errore: omonimia tra i Lug: '+id) # metti in reportistica generale
+				logga('Errore: omonimia per i Lug', id)
 				continue
 			else:
 				elenco_lug.add(id)
@@ -245,49 +265,37 @@ if __name__ == "__main__":
 	for voce in zodb.keys(): # elimino da zodb le voci non piu' presenti
 		if voce not in elenco_lug:
 			del zodb[voce]
-			report.append('Warn: '+voce+' eliminato da ZODB')
+			report.append('Atten.: '+voce+' rimosso')
 			logga('rimosso <'+voce+'> da ZODB')
 
-	all_p = []
 	for id in sorted(zodb.keys()):
-		'''
-		fred = multiprocessing.Process(target=zodb[id].controlli, name=id, args=(coda_risultati,))
-		fred.start()
-		fred.join(tempo_minimo_per_i_controlli)
-		'''
-		all_p.append(multiprocessing.Process(target=zodb[id].controlli, name=id, args=(coda_risultati,)))
-		all_p[-1].start()
-		all_p[-1].join(tempo_minimo_per_i_controlli)
+		elenco_thread.append(multiprocessing.Process(target=zodb[id].controlli, name=id))
+		elenco_thread[-1].start()
+		elenco_thread[-1].join(tempo_minimo_per_i_controlli)
 
 	logga('inizio commit dei risultati in zodb')
-	while True:
+	for filepk in sorted( glob.glob( os.path.join(path_coda, '*.spazzino') ) ):
 		try:
-			risultati = coda_risultati.get_nowait() # dalla coda prendo il pickle delle classi aggiornate
-		except: # se la coda è vuota vado in timeout
-			break
-		zodb[risultati['id']] = risultati['oggetto'] # diversamente aggiorno zodb
-		logga('Lug: <'+risultati['id']+'> commit dei dati')
+			lug_risultati = pickle.load(open(filepk,'r'))
+		except:
+			logga('Errore lettura pickle dal file',filepk)
+			continue
+		zodb[lug_risultati.id] = lug_risultati # diversamente aggiorno zodb
+		logga('Lug: <'+lug_risultati.id+'> commit dei dati')
+		os.remove(filepk)
 	logga('fine commit dei risultati in zodb')
-
-	# controllo stato dei thread
-	for id in multiprocessing.active_children():
-		report.append('Warn: check incompleto '+id.name+'    '+zodb[id.name].url)
-		logga('Lug: <'+id.name+'> thread appeso')
-		id.terminate()
 
 	logga('inizio invio notifiche')
 	for id in sorted(zodb.keys()):
 		if zodb[id].notifiche:
 			logga('Lug <'+id+'> invio notifiche')
-			report.append(30*'-')
-			report.append('Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+')')
+			report.append('\n- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
 			for rigo in zodb[id].notifiche: report.append(rigo)
-			report.append('- - - Dati - - -')
-			report.append('Regione: '+zodb[id].regione)
+			report.append('\n        * Dati DB *')
+			report.append('Url:       ' + zodb[id].url + '   Email: '+zodb[id].contatto)
+			report.append('Regione:   ' + zodb[id].regione)
 			report.append('Provincia: '+zodb[id].provincia)
-			report.append('Zona: '+zodb[id].zona)
-			report.append('Url: '+zodb[id].url)
-			report.append('Contatto: '+zodb[id].contatto)
+			report.append('Zona:      '+zodb[id].zona)
 	logga('fine invio notifiche')
 
 	invia_report('\n'.join(report))
