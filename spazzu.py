@@ -298,11 +298,10 @@ if __name__ == "__main__":
 			report.append('Atten. <'+zodb[id].id+'> non ha concluso il ciclo di controlli')
 
 	logga('inizio invio notifiche')
-	report.append('')
 	for id in sorted(zodb.keys()):
 		if zodb[id].notifiche:
 			logga('Lug <'+id+'> invio notifiche')
-			report.append('- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
+			report.append('\n\n- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
 			for rigo in zodb[id].notifiche: report.append(rigo)
 			report.append('\n        * Dati DB *')
 			report.append('Url:       ' + zodb[id].url + '   Email: '+zodb[id].contatto)
