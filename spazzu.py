@@ -73,6 +73,7 @@ if True: # variabili globali
 	elenco_lug						= set() # usato per cancellare Lug rimossi da zodb e per controllare omonimie
 	tempo_minimo_per_i_controlli	= 120 # secondi
 	elenco_thread					= []
+	ritardo_lancio_thread			= 5 # secondi tra un thread e l'altro
 	path_coda						= '/tmp/' # posizione dei file temporanei di coda
 	report 							= [] # linee del report finale
 	report.append('Spazzino: report del ' + str(datetime.datetime.utcnow()) + '(UTC)')
@@ -274,7 +275,10 @@ if __name__ == "__main__":
 	for id in sorted(zodb.keys()):
 		elenco_thread.append(multiprocessing.Process(target=zodb[id].controlli, name=id))
 		elenco_thread[-1].start()
-		elenco_thread[-1].join(tempo_minimo_per_i_controlli)
+		time.sleep(ritardo_lancio_thread)
+
+	for j in elenco_thread:
+		elenco_thread[j].join(tempo_minimo_per_i_controlli)
 
 	logga('inizio commit dei risultati in zodb')
 	for filepk in sorted( glob.glob( os.path.join(path_coda, '*.spazzino') ) ):
