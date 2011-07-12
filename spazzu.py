@@ -71,13 +71,13 @@ except:
 
 if True: # variabili globali
 	elenco_lug						= set() # usato per cancellare Lug rimossi da zodb e per controllare omonimie
-	tempo_minimo_per_i_controlli	= 20 # secondi
+	tempo_minimo_per_i_controlli	= 120 # secondi
 	elenco_thread					= []
 	path_coda						= '/tmp/' # posizione dei file temporanei di coda
 	report 							= [] # linee del report finale
 	report.append('Spazzino: report del ' + str(datetime.datetime.utcnow()) + '(UTC)')
 	report.append('')
-	socket.setdefaulttimeout(tempo_minimo_per_i_controlli / 4) # Timeout in secondi del fetching delle pagine (onorato da urllib2, a sua volta usato da Mechanize)
+	socket.setdefaulttimeout(tempo_minimo_per_i_controlli / 2) # Timeout in secondi del fetching delle pagine (onorato da urllib2, a sua volta usato da Mechanize)
 
 def invia_report(body):
 	"""I receive a body, and I send email"""
@@ -124,6 +124,8 @@ class LUG(persistent.Persistent):
 		"""Se i dati nel CSV sono cambiati, li rifletto nell'oggetto"""
 
 		self.notifiche = [] # ad ogni avvio dei check, azzero
+		self.controlli_conclusi = False
+		self.aggiorna_dati()
 
 		if self.provincia     != riga_csv[0]:
 			self.provincia     = riga_csv[0]
@@ -241,6 +243,7 @@ class LUG(persistent.Persistent):
 		if self.controllo_dns():
 			if self.controllo_homepage():
 				self.controllo_title()
+		self.controlli_conclusi = True
 		self.aggiorna_dati()
 		logga('Lug <'+self.id+'>: fine controlli')
 
@@ -285,11 +288,16 @@ if __name__ == "__main__":
 		os.remove(filepk)
 	logga('fine commit dei risultati in zodb')
 
+	for id in sorted(zodb.keys()): # report dei thread che non hanno concluso
+		if zodb[id].controlli_conclusi is False:
+			logga('Lug: <'+zodb[id].id+'> non ha concluso il ciclo di controlli')
+			report.append('Atten. <'+zodb[id].id+'> non ha concluso il ciclo di controlli')
+
 	logga('inizio invio notifiche')
 	for id in sorted(zodb.keys()):
 		if zodb[id].notifiche:
 			logga('Lug <'+id+'> invio notifiche')
-			report.append('\n- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
+			report.append('- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
 			for rigo in zodb[id].notifiche: report.append(rigo)
 			report.append('\n        * Dati DB *')
 			report.append('Url:       ' + zodb[id].url + '   Email: '+zodb[id].contatto)
