@@ -25,7 +25,7 @@ if True: # import dei moduli
 		sys.exit("Necessito di un interprete Python dalla versione 2.6 in poi")
 
 	try:
-		import atexit, csv, datetime, glob, multiprocessing, os, socket, sys, smtplib, syslog, time
+		import atexit, csv, datetime, glob, multiprocessing, os, socket, sys, smtplib, syslog, tempfile, time
 	except:
 		sys.exit("Non sono disponibili tutti i moduli standard necessari")
 
@@ -203,7 +203,7 @@ class LUG(persistent.Persistent):
 
 		self.Termini_Precedenti = self._v_Termini_Attuali
 
-		if valore_magico <= 0.6:
+		if valore_magico <= 0.8:
 			self.notifica('Atten.: differenze contenuto homepage ('+str(valore_magico)+')')
 		else:
 			logga('Lug <'+self.id+'>: valore_magico a', valore_magico)
@@ -228,15 +228,14 @@ class LUG(persistent.Persistent):
 		self.title_homepage = self._v_titolo_attuale # in ogni caso salvo il nuovo valore
 
 	def aggiorna_dati(self):
+		self.ultimo_aggiornamento = time.time()
+
 		try:
-			self._v_incrementale_log += 1
+			fd, fname = tempfile.mkstemp(suffix='.spazzino', dir=path_coda)
+			file_pk = os.fdopen(fd, "w")
+			pickle.dump(self, file_pk, 0)
 		except:
-			self._v_incrementale_log = 0
-		nome_file = path_coda + str(time.time()) + '.' + str(os.getpid()) + '.' + str(self._v_incrementale_log) + '.spazzino'
-		try:
-			pickle.dump(self, open(nome_file, 'w'), 0)
-		except:
-			logga('Lug <'+self.id+'>: errore salvataggio pickling '+nome_file)
+			logga('Lug <'+self.id+'>: errore salvataggio pickling ' + fname)
 
 	def controlli(self):
 		logga('Lug <'+self.id+'>: inizio controlli')
@@ -269,7 +268,7 @@ if __name__ == "__main__":
 	for voce in zodb.keys(): # elimino da zodb le voci non piu' presenti
 		if voce not in elenco_lug:
 			del zodb[voce]
-			report.append('Atten.: '+voce+' rimosso')
+			report.append('Atten.: <'+voce+'< rimosso')
 			logga('rimosso <'+voce+'> da ZODB')
 
 	for id in sorted(zodb.keys()):
@@ -278,7 +277,7 @@ if __name__ == "__main__":
 		time.sleep(ritardo_lancio_thread)
 
 	for j in elenco_thread:
-		elenco_thread[j].join(tempo_minimo_per_i_controlli)
+		j.join(tempo_minimo_per_i_controlli)
 
 	logga('inizio commit dei risultati in zodb')
 	for filepk in sorted( glob.glob( os.path.join(path_coda, '*.spazzino') ) ):
@@ -287,9 +286,17 @@ if __name__ == "__main__":
 		except:
 			logga('Errore lettura pickle dal file',filepk)
 			continue
-		zodb[lug_risultati.id] = lug_risultati # diversamente aggiorno zodb
-		logga('Lug: <'+lug_risultati.id+'> commit dei dati')
+
+		if not hasattr(zodb[lug_risultati.id], ultimo_aggiornamento):
+			zodb[lug_risultati.id].ultimo_aggiornamento = 0.1
+
+		if zodb[lug_risultati.id].ultimo_aggiornamento <= lug_risultati.ultimo_aggiornamento:
+			zodb[lug_risultati.id] = lug_risultati
+			logga('Lug: <'+lug_risultati.id+'> commit dei dati')
+		else:
+			logga('Lug: <'+lug_risultati.id+'> file pickle '+filepk+' vecchio. Scartato')
 		os.remove(filepk)
+
 	logga('fine commit dei risultati in zodb')
 
 	for id in sorted(zodb.keys()): # report dei thread che non hanno concluso
@@ -301,13 +308,11 @@ if __name__ == "__main__":
 	for id in sorted(zodb.keys()):
 		if zodb[id].notifiche:
 			logga('Lug <'+id+'> invio notifiche')
-			report.append('\n\n- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
+			report.append('\n- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
 			for rigo in zodb[id].notifiche: report.append(rigo)
 			report.append('\n        * Dati DB *')
 			report.append('Url:       ' + zodb[id].url + '   Email: '+zodb[id].contatto)
-			report.append('Regione:   ' + zodb[id].regione)
-			report.append('Provincia: '+zodb[id].provincia)
-			report.append('Zona:      '+zodb[id].zona)
+			report.append('Dove:   ' + zodb[id].regione.capitalize() + ' -- '+zodb[id].provincia + ' '+zodb[id].zona)
 	logga('fine invio notifiche')
 
 	invia_report('\n'.join(report))
