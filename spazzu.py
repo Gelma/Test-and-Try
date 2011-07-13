@@ -76,9 +76,18 @@ if True: # variabili globali
 	ritardo_lancio_thread			= 5 # secondi tra un thread e l'altro
 	path_coda						= '/tmp/' # posizione dei file temporanei di coda
 	report 							= [] # linee del report finale
-	report.append('Spazzino: report del ' + str(datetime.datetime.utcnow()) + ' (UTC)')
-	report.append('')
 	socket.setdefaulttimeout(tempo_minimo_per_i_controlli / 2) # Timeout in secondi del fetching delle pagine (onorato da urllib2, a sua volta usato da Mechanize)
+	pidfile							= '/tmp/.spazzino.pid' # controllo istanze attive
+	orario_partenza					= time.time()
+
+if True: # controllo istanze attive
+	if os.path.isfile(pidfile):
+		if os.path.isdir('/proc/' + str(file(pidfile,'r').read())):
+			logga('Spazzino: forse un\'altra istanza attiva. Eventualmente cancella '+pidfile)
+			sys.exit('Spazzino: forse un\'altra istanza attiva. Eventualmente cancella '+pidfile)
+		else:
+			logga("Spazzino: rimosso "+pidfile)
+	file(pidfile,'w').write(str(os.getpid()))
 
 def invia_report(body):
 	"""I receive a body, and I send email"""
@@ -334,10 +343,19 @@ if __name__ == "__main__":
 			report.append('Dove: ' + zodb[id].regione.capitalize() + ' -> '+zodb[id].provincia + ' -> ' +zodb[id].zona)
 	logga('fine invio notifiche')
 
-	invia_report('\n'.join(report))
-	print '\n'.join(report)
+	if report:
+		report.insert(0, 'Spazzino: report del ' +
+					  time.strftime('%d/%m/%y', time.gmtime(orario_partenza)) +
+					  ' dalle ' +
+					  time.strftime('%H:%M', time.gmtime(orario_partenza)) +
+					  ' alle ' +
+					  time.strftime('%H:%M', time.gmtime(time.time()))
+					  )
+		#invia_report('\n'.join(report))
+		print '\n'.join(report)
 
 transaction.commit()
-#db.pack()
+db.pack()
 db.close()
+os.remove(pidfile)
 logga('concluso')
