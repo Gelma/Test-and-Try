@@ -76,7 +76,7 @@ if True: # variabili globali
 	ritardo_lancio_thread			= 5 # secondi tra un thread e l'altro
 	path_coda						= '/tmp/' # posizione dei file temporanei di coda
 	report 							= [] # linee del report finale
-	report.append('Spazzino: report del ' + str(datetime.datetime.utcnow()) + '(UTC)')
+	report.append('Spazzino: report del ' + str(datetime.datetime.utcnow()) + ' (UTC)')
 	report.append('')
 	socket.setdefaulttimeout(tempo_minimo_per_i_controlli / 2) # Timeout in secondi del fetching delle pagine (onorato da urllib2, a sua volta usato da Mechanize)
 
@@ -118,6 +118,8 @@ class LUG(persistent.Persistent):
 
 		self.dominio = None # informazioni specifiche per ogni Lug
 		self.notifiche = [] # non puoi dichiararla volatile. Il pickling non la porterebbe nella coda_risultati
+		self.web_errore_segnalato = False # controllo segnalazioni ripetute
+		self.dns_errore_segnalato = False # controllo segnalazioni ripetute
 		self.numero_controlli = 0
 		self.numero_errori = 0
 
@@ -167,6 +169,12 @@ class LUG(persistent.Persistent):
 			self._v_DNS_attuali = [ IP[4][0] for IP in socket.getaddrinfo(self.dominio, 80, 0, 0, socket.SOL_TCP)]
 		except:
 			self.notifica("Errore DNS per "+self.dominio)
+
+			if self.dns_errore_segnalato is False:
+				self.dns_errore_segnalato = time.time()
+			else:
+				self.notifiche[-1] = self.notifiche[-1] + ' (noto dal '+ time.strftime('%d/%m/%y') + ')'
+
 			return False
 
 		try: # eccezione nel caso sia il primo lancio e self.DNS_noti non esista
@@ -176,6 +184,10 @@ class LUG(persistent.Persistent):
 					self.DNS_noti.add(ip_dns_attuale)
 		except:
 			self.DNS_noti = set([IP for IP in self._v_DNS_attuali])
+
+		if self.dns_errore_segnalato is not False:
+			self.notifica("Precedente errore DNS del " + time.strftime('%d/%m/%y', time.gmtime(self.dns_errore_segnalato)) + ' risolto')
+			self.dns_errore_segnalato = False
 
 		return True
 
@@ -191,7 +203,13 @@ class LUG(persistent.Persistent):
 		try:
 			self._v_Termini_Attuali = set(self._v_browser.open(self.url).read().split()) # Estrapolo parole
 		except:
-			self.notifica('Errore sito: errore lettura homepage')
+			self.notifica('Errore wbe: impossibile leggere homepage')
+
+			if self.web_errore_segnalato is False:
+				self.web_errore_segnalato = time.time()
+			else:
+				self.notifiche[-1] = self.notifiche[-1] + ' (noto dal '+ time.strftime('%d/%m/%y') + ')'
+
 			return False
 
 		try: # per evitare segnalazione su un Lug nuovo, se self.Termini_Precedenti non esiste
@@ -207,6 +225,10 @@ class LUG(persistent.Persistent):
 			self.notifica('Atten.: differenze contenuto homepage ('+str(valore_magico)+')')
 		else:
 			logga('Lug <'+self.id+'>: valore_magico a', valore_magico)
+
+		if self.web_errore_segnalato is not False:
+			self.notifica("Precedente errore WEB del " + time.strftime('%d/%m/%y', time.gmtime(self.web_errore_segnalato)) + ' risolto')
+			self.dns_errore_segnalato = False
 
 		return True
 
@@ -287,9 +309,6 @@ if __name__ == "__main__":
 			logga('Errore lettura pickle dal file',filepk)
 			continue
 
-		if not hasattr(zodb[lug_risultati.id], ultimo_aggiornamento):
-			zodb[lug_risultati.id].ultimo_aggiornamento = 0.1
-
 		if zodb[lug_risultati.id].ultimo_aggiornamento <= lug_risultati.ultimo_aggiornamento:
 			zodb[lug_risultati.id] = lug_risultati
 			logga('Lug: <'+lug_risultati.id+'> commit dei dati')
@@ -311,8 +330,8 @@ if __name__ == "__main__":
 			report.append('\n- - ----> Lug: '+zodb[id].id+' ('+str(zodb[id].numero_controlli)+'/'+str(zodb[id].numero_errori)+') <---- - -\n')
 			for rigo in zodb[id].notifiche: report.append(rigo)
 			report.append('\n        * Dati DB *')
-			report.append('Url:       ' + zodb[id].url + '   Email: '+zodb[id].contatto)
-			report.append('Dove:   ' + zodb[id].regione.capitalize() + ' -- '+zodb[id].provincia + ' '+zodb[id].zona)
+			report.append('Url : ' + zodb[id].url + '   Email: '+zodb[id].contatto)
+			report.append('Dove: ' + zodb[id].regione.capitalize() + ' -> '+zodb[id].provincia + ' -> ' +zodb[id].zona)
 	logga('fine invio notifiche')
 
 	invia_report('\n'.join(report))
