@@ -1,0 +1,62 @@
+
+spazzolone-ng: A replacement for spazzolone
+============================================
+
+spazzolone-ng is a replacement for spazzolone, it's written in python
+to fetch and analyze data of the italian LUGs.
+
+
+Requirements
+------------
+It require:
+- python >= 2.6
+- httplib2 - https://code.google.com/p/httplib2/
+- zodb - http://www.zodb.org/
+
+File description
+----------------
+check.py - contains the function to fetch the LUGs' data and the
+           function launched in the multiprocess 
+config.py - contains the config variables such as how many process must
+            be launched to fetch the LUGs' data
+lug.py - contains the class LUG, the one stored in ZODB
+utils.py - contains all the utiliy functions such as read_db or
+           zodb_conn_open
+spazzolone.py - contains the main
+
+
+How it works
+------------
+spazzolone-ng reads the LUGs' data from the lug database (utils.read_db),
+the database is composed of .txt files in the './db/' (config.LUG_DB)
+directory (one file for each region), every row in a db file is a LUG
+entry, the row MUST be in this format:
+Provice|Name|Zone|URL of the lug website|email address of the contact
+
+All the data read from the lug_db database is inserted in a queue (lug_db_q),
+then spazzolone-ng start N (config.P_NUMBER) process (check.mp_fill_lug)
+which take the info from lug_db_q, proceed to fetch the data from the lug
+website and puts the results in the result queue (lug_data_q).
+
+Once all the data from the LUG websites are fetched, spazzolone-ng
+read from the result queue (lug_data_q) and reports back those
+containing errors.
+
+Todo
+----
+- implement the send_report function in utils.py
+- implement the check of the title
+- clean the debug code used during the first writing of spazzolone-ng
+- beautify the report
+- now it doesn't use logit, so no syslog log are generated
+- now I don't use volatile variables in LUG, maybe should I?
+- comment the code
+- fix the grammar of the README/comments :P
+
+Authors
+=======
+Author of spazzolone-ng:
+necro <necro@circolab.net> 
+
+Author of the original spazzolone on which is based spazzolone-ng:
+Andrea Gelmini <andrea.gelmini@gelma.net>
